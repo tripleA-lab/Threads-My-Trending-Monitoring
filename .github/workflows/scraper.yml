@@ -1,19 +1,14 @@
 name: Threads Stealth Scraper Cron
 
 on:
-  # Membolehkan anda uji tekan butang 'Run' secara manual di tab Actions
-  workflow_dispatch:
+  workflow_dispatch: # Boleh tekan 'Run' secara manual bila-bila masa
 
-  # Jadual Automatik (Waktu Malaysia: 8am, 12pm, 6pm, 10pm)
-  # 00:00 UTC = 8:00 AM MYT
-  # 04:00 UTC = 12:00 PM MYT
-  # 10:00 UTC = 6:00 PM MYT
-  # 14:00 UTC = 10:00 PM MYT
   schedule:
+    # Jalan 4 kali sehari ikut Waktu Malaysia (8am, 12pm, 6pm, 10pm)
     - cron: '0 0,4,10,14 * * *'
 
 jobs:
-  scrape:
+  scrape-and-build:
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -33,15 +28,20 @@ jobs:
           pip install -r requirements.txt
           playwright install chromium --with-deps
 
-      - name: Jalankan Stealth Scraper (< 1 Minit)
+      - name: Jalankan Stealth Scraper & Seeder
         run: |
-          # Dijalankan dengan had masa maksimum 45 saat secara perlahan & santai
+          # Suntik data awal jika database baru, kemudian crawl santai
+          python scraper/threads_scraper.py --seed
           python scraper/threads_scraper.py --duration 45
 
-      - name: Simpan Kemas Kini Database ke Repository
+      - name: Jana Laman Web index.html untuk GitHub Pages
+        run: |
+          python generate_html.py
+
+      - name: Simpan Kemas Kini Database & Web ke GitHub
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add threads_data.db || true
-          git commit -m "chore(data): auto-update trending threads [skip ci]" || exit 0
+          git add threads_data.db index.html || true
+          git commit -m "chore: auto-update dashboard & viral posts [skip ci]" || exit 0
           git push
