@@ -1,14 +1,12 @@
 """
 Modul Pengurusan Pangkalan Data (Database Layer)
-Menyokong SQLite secara automatik untuk penyimpanan data.
+Fokus kepada Post yang Spike & Viral (Komen > 500) tanpa kekangan masa sempit.
 """
 
 import os
 import sqlite3
-from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any
 
-# Lokasi fail database SQLite
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "threads_data.db")
 
 def get_connection():
@@ -17,7 +15,6 @@ def get_connection():
     return conn
 
 def init_db():
-    """Bina jadual database sekiranya belum wujud."""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
@@ -39,9 +36,6 @@ def init_db():
     conn.close()
 
 def upsert_post(post: Dict[str, Any]):
-    """
-    Masukkan data post baharu atau kemas kini metrik jika sudah wujud.
-    """
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
@@ -64,39 +58,36 @@ def upsert_post(post: Dict[str, Any]):
     conn.commit()
     conn.close()
 
-def get_top_posts(timeframe: str = "24h", min_likes: int = 500, min_comments: int = 500, limit: int = 10) -> List[Dict[str, Any]]:
+def get_top_posts(min_comments: int = 500, limit: int = 10) -> List[Dict[str, Any]]:
     """
-    Tarik Top Posts berdasarkan:
-    - timeframe: '24h' (24 jam) atau '7d' (seminggu)
-    - min_likes >= 500
-    - min_comments >= 500
-    - Susunan markah viral tertinggi
+    Tarik Top 10 Isu Paling Spike & Hangat.
+    Keutamaan kepada perbincangan rancak (Komen > 500) dan Viral Score.
     """
-    now = datetime.now(timezone.utc)
-    if timeframe == "24h":
-        cutoff_time = (now - timedelta(hours=24)).isoformat()
-    elif timeframe == "7d":
-        cutoff_time = (now - timedelta(days=7)).isoformat()
-    else:
-        cutoff_time = (now - timedelta(days=30)).isoformat()
-
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
         SELECT * FROM threads_posts
-        WHERE posted_at >= ?
-          AND likes_count >= ?
-          AND comments_count >= ?
-        ORDER BY viral_score DESC
+        WHERE comments_count >= ?
+        ORDER BY viral_score DESC, comments_count DESC
         LIMIT ?
-    """, (cutoff_time, min_likes, min_comments, limit))
+    """, (min_comments, limit))
     
     rows = cursor.fetchall()
+    
+    # Jika dalam DB kurang dari 10 post yang cecah 500 komen,
+    # ambil baki post tertinggi supaya ranking sentiasa genap 10.
+    if len(rows) < limit:
+        cursor.execute("""
+            SELECT * FROM threads_posts
+            ORDER BY viral_score DESC, comments_count DESC
+            LIMIT ?
+        """, (limit,))
+        rows = cursor.fetchall()
+
     conn.close()
     return [dict(row) for row in rows]
 
 def get_stats() -> Dict[str, Any]:
-    """Ringkasan statistik keseluruhan."""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT COUNT(*) as total, MAX(likes_count) as max_likes, MAX(comments_count) as max_comments FROM threads_posts")
@@ -104,5 +95,4 @@ def get_stats() -> Dict[str, Any]:
     conn.close()
     return dict(row) if row else {"total": 0, "max_likes": 0, "max_comments": 0}
 
-# Inisialisasi DB secara automatik
 init_db()
